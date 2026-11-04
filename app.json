@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "ServisTakip",
+    "slug": "servistakip",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "servistakip",
+    "userInterfaceStyle": "light",
+    "android": {
+      "predictiveBackGestureEnabled": false
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "plugins": [
+      "expo-font",
+      "expo-status-bar"
+    ]
+  }
+}
