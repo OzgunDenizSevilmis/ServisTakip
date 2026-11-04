@@ -55,10 +55,6 @@ export function LoginScreen() {
         password,
       });
 
-      console.log('LOGIN SESSION:', Boolean(data.session));
-      console.log('LOGIN USER:', data.user?.id);
-      console.log('LOGIN ERROR:', error?.message);
-
       if (error) {
         setErrorMessage(error.message);
         return;
@@ -91,16 +87,33 @@ export function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.container}>
-        <Text style={styles.title}>ServisTakip</Text>
-        <Text style={styles.description}>Hesabınıza giriş yapın.</Text>
+        <View pointerEvents="none" style={styles.waveContainer}>
+  <View style={styles.waveBack} />
+  <View style={styles.waveMiddle} />
+  <View style={styles.waveFront} />
+</View>
+        <View style={styles.brand}>
+          <View style={styles.logo}>
+            <Text style={styles.logoSymbol}>◆</Text>
+          </View>
+          <Text style={styles.brandTitle}>ServisTakip</Text>
+          <Text style={styles.brandDescription}>
+            Servis ve bakım taleplerinizi kolayca yönetin.
+          </Text>
+        </View>
 
         <View style={styles.form}>
+          <Text style={styles.welcomeTitle}>Hoş Geldiniz!</Text>
+          <Text style={styles.welcomeDescription}>
+            Hesabınıza giriş yapın.
+          </Text>
+
           <Text style={styles.label}>E-posta</Text>
           <TextInput
             style={styles.input}
             value={email}
             onChangeText={setEmail}
-            placeholder="ornek@firma.com"
+            placeholder="E-posta adresiniz"
             placeholderTextColor={colors.textMuted}
             keyboardType="email-address"
             autoCapitalize="none"
@@ -134,25 +147,18 @@ export function LoginScreen() {
           <Pressable
             style={({ pressed }) => [
               styles.button,
-              (pressed || isLoading) && styles.buttonPressed,
+              pressed && styles.buttonPressed,
+              isLoading && styles.buttonDisabled,
             ]}
             onPress={() => void handleLogin()}
             disabled={isLoading}
             accessibilityRole="button"
           >
             {isLoading ? (
-              <ActivityIndicator color={colors.background} />
+              <ActivityIndicator color={colors.surface} />
             ) : (
               <Text style={styles.buttonText}>Giriş Yap</Text>
             )}
-          </Pressable>
-
-          <Pressable
-            style={styles.forgotPasswordButton}
-            onPress={() => navigation.navigate('ForgotPassword')}
-            disabled={isLoading}
-          >
-            <Text style={styles.forgotPasswordText}>Şifremi unuttum</Text>
           </Pressable>
 
           <Pressable
@@ -160,8 +166,8 @@ export function LoginScreen() {
             onPress={() => navigation.navigate('Register')}
             disabled={isLoading}
           >
-            <Text style={styles.secondaryButtonText}>
-              Hesabınız yok mu? Kayıt olun
+            <Text style={styles.secondaryText}>
+              Hesabınız yok mu? <Text style={styles.link}>Hesap Oluştur</Text>
             </Text>
           </Pressable>
         </View>
@@ -173,80 +179,158 @@ export function LoginScreen() {
 const styles = StyleSheet.create({
   keyboardView: {
     flex: 1,
+    backgroundColor: colors.background,
   },
   container: {
     flex: 1,
     justifyContent: 'center',
-    backgroundColor: colors.background,
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xl,
   },
-  title: {
+  brand: {
+    alignItems: 'center',
+    marginBottom: spacing.xl,
+      zIndex: 1,
+  },
+  logo: {
+    width: 72,
+    height: 72,
+    borderRadius: 24,
+    backgroundColor: colors.primaryBackground,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  logoSymbol: {
+    color: colors.primary,
+    fontSize: 38,
+    fontWeight: '700',
+  },
+  brandTitle: {
     color: colors.text,
     ...typography.title,
-    textAlign: 'center',
+    fontWeight: '700',
   },
-  description: {
+  brandDescription: {
     color: colors.textMuted,
     ...typography.body,
-    marginTop: spacing.sm,
     textAlign: 'center',
+    marginTop: spacing.sm,
+    maxWidth: 280,
+    lineHeight: 24,
   },
   form: {
-    marginTop: spacing.xl,
+    backgroundColor: colors.surface,
+    borderRadius: 24,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    zIndex: 1,
+  },
+  welcomeTitle: {
+    color: colors.text,
+    ...typography.heading,
+  },
+  welcomeDescription: {
+    color: colors.textMuted,
+    ...typography.body,
+    marginTop: spacing.xs,
+    marginBottom: spacing.lg,
   },
   label: {
     color: colors.text,
-    ...typography.body,
+    ...typography.caption,
+    fontWeight: '600',
     marginBottom: spacing.xs,
   },
   input: {
     color: colors.text,
     ...typography.body,
+    backgroundColor: colors.background,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: 14,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
     marginBottom: spacing.md,
   },
   error: {
     color: colors.danger,
-    ...typography.body,
+    ...typography.caption,
     marginBottom: spacing.md,
   },
   button: {
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.primary,
-    borderRadius: 8,
+    borderRadius: 14,
+    minHeight: 52,
     padding: spacing.md,
-    minHeight: 48,
     marginTop: spacing.sm,
   },
   buttonPressed: {
-    opacity: 0.7,
+    opacity: 0.85,
+  },
+  buttonDisabled: {
+    opacity: 0.65,
   },
   buttonText: {
-    color: colors.background,
+    color: colors.surface,
     ...typography.body,
-  },
-  forgotPasswordButton: {
-    alignSelf: 'flex-end',
-    marginTop: spacing.sm,
-    marginBottom: spacing.xs,
-    padding: spacing.sm,
-  },
-  forgotPasswordText: {
-    color: colors.primary,
-    ...typography.body,
+    fontWeight: '600',
   },
   secondaryButton: {
     alignItems: 'center',
-    padding: spacing.md,
+    paddingTop: spacing.lg,
   },
-  secondaryButtonText: {
-    color: colors.primary,
-    ...typography.body,
+  secondaryText: {
+    color: colors.textMuted,
+    ...typography.caption,
     textAlign: 'center',
   },
+  link: {
+    color: colors.primary,
+    fontWeight: '600',
+  },
+waveContainer: {
+  position: 'absolute',
+  bottom: 0,
+  left: 0,
+  right: 0,
+  height: 115,
+  overflow: 'hidden',
+},
+
+waveBack: {
+  position: 'absolute',
+  bottom: -95,
+  left: -100,
+  width: '155%',
+  height: 180,
+  borderRadius: 200,
+  backgroundColor: '#C4B5FD',
+  transform: [{ rotate: '-8deg' }],
+},
+
+waveMiddle: {
+  position: 'absolute',
+  bottom: -110,
+  left: -65,
+  width: '150%',
+  height: 180,
+  borderRadius: 200,
+  backgroundColor: '#8B5CF6',
+  transform: [{ rotate: '5deg' }],
+},
+
+waveFront: {
+  position: 'absolute',
+  bottom: -130,
+  left: -40,
+  width: '140%',
+  height: 180,
+  borderRadius: 200,
+  backgroundColor: '#6D28D9',
+  transform: [{ rotate: '-2deg' }],
+},
 });
