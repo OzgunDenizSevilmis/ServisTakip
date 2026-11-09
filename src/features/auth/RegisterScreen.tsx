@@ -32,6 +32,7 @@ type RegisterNavigationProp = NativeStackNavigationProp<
 export function RegisterScreen() {
   const navigation = useNavigation<RegisterNavigationProp>();
 
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -41,10 +42,21 @@ export function RegisterScreen() {
   const handleRegister = async () => {
     if (isLoading) return;
 
+    const normalizedName = fullName.trim().replace(/\s+/g, ' ');
     const normalizedEmail = email.trim().toLowerCase();
 
-    if (!normalizedEmail || !password || !confirmPassword) {
+    if (
+      !normalizedName ||
+      !normalizedEmail ||
+      !password ||
+      !confirmPassword
+    ) {
       setErrorMessage('Tüm alanları doldurun.');
+      return;
+    }
+
+    if (normalizedName.length < 3) {
+      setErrorMessage('Ad soyad en az 3 karakter olmalıdır.');
       return;
     }
 
@@ -70,6 +82,11 @@ export function RegisterScreen() {
       const { data, error } = await supabase.auth.signUp({
         email: normalizedEmail,
         password,
+        options: {
+          data: {
+            full_name: normalizedName,
+          },
+        },
       });
 
       if (error) {
@@ -82,8 +99,9 @@ export function RegisterScreen() {
       }
 
       setErrorMessage(
-        'Hesap oluşturuldu. Giriş ekranından hesabınıza giriş yapabilirsiniz.',
+        'Hesabınız oluşturuldu. Giriş ekranından hesabınıza giriş yapabilirsiniz.',
       );
+
       navigation.navigate('Login');
     } catch {
       setErrorMessage('Kayıt sırasında bir bağlantı hatası oluştu.');
@@ -120,13 +138,29 @@ export function RegisterScreen() {
 
           <View style={styles.form}>
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>✦ Ücretsiz hesap oluşturun</Text>
+              <Text style={styles.badgeText}>
+                ✦ Ücretsiz hesap oluşturun
+              </Text>
             </View>
 
             <Text style={styles.welcomeTitle}>Aramıza Hoş Geldiniz!</Text>
             <Text style={styles.welcomeDescription}>
               Servis taleplerinizi takip etmek için hesabınızı oluşturun.
             </Text>
+
+            <Text style={styles.label}>Ad Soyad</Text>
+            <TextInput
+              style={styles.input}
+              value={fullName}
+              onChangeText={setFullName}
+              placeholder="Adınız ve soyadınız"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="words"
+              autoCorrect={false}
+              autoComplete="name"
+              editable={!isLoading}
+              maxLength={100}
+            />
 
             <Text style={styles.label}>E-posta</Text>
             <TextInput

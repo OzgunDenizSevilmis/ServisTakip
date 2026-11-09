@@ -5,13 +5,10 @@ import type { Session } from '@supabase/supabase-js';
 
 import { AuthStack } from './AuthStack';
 import { AppStack } from './AppStack';
+import type { RootStackParamList } from './types';
+
 import { supabase } from '../services/supabase/client';
 import { colors } from '../theme';
-
-type RootStackParamList = {
-  Auth: undefined;
-  App: undefined;
-};
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 

@@ -7,7 +7,14 @@ export type AppTabParamList = {
   Profile: undefined;
 };
 
+export type AppStackParamList = {
+  MainTabs: NavigatorScreenParams<AppTabParamList>;
+  TicketDetail: {
+    ticketId: string;
+  };
+};
+
 export type RootStackParamList = {
-  Login: undefined;
-  App: NavigatorScreenParams<AppTabParamList>;
+  Auth: undefined;
+  App: undefined;
 };

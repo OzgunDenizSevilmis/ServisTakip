@@ -5,9 +5,9 @@ import { colors, spacing, typography } from '../theme';
 export const screenStyles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
     backgroundColor: colors.background,
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
   },
   title: {
     color: colors.text,
