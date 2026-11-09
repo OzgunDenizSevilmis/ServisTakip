@@ -65,10 +65,21 @@ export type TicketHistoryItem = {
   note: string | null;
   created_at: string;
 };
+
 export type TicketPerson = {
   user_id: string;
   full_name: string | null;
   role: string;
+};
+
+export type CurrentUserContext = {
+  userId: string;
+  role: 'manager' | 'technician' | 'employee';
+};
+
+export type AssignableTechnician = {
+  user_id: string;
+  full_name: string;
 };
 
 export async function getActiveCategories(): Promise<TicketCategory[]> {
@@ -135,13 +146,33 @@ export async function getMyTickets(): Promise<TicketListItem[]> {
     throw new Error('Servis kayıtlarını görmek için giriş yapmalısınız.');
   }
 
-  const { data: tickets, error } = await supabase
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+
+  if (profileError) {
+    throw new Error(`Kullanıcı rolü alınamadı: ${profileError.message}`);
+  }
+
+  let query = supabase
     .from('tickets')
     .select(
       'id, ticket_no, title, description, location, priority, status, category_id, created_at',
-    )
-    .eq('created_by', user.id)
-    .order('created_at', { ascending: false });
+    );
+
+  if (profile.role === 'technician') {
+    query = query.or(
+      `created_by.eq.${user.id},assigned_to.eq.${user.id}`,
+    );
+  } else if (profile.role === 'employee') {
+    query = query.eq('created_by', user.id);
+  }
+
+  const { data: tickets, error } = await query.order('created_at', {
+    ascending: false,
+  });
 
   if (error) {
     throw new Error(`Servis kayıtları yüklenemedi: ${error.message}`);
@@ -164,7 +195,9 @@ export async function getMyTickets(): Promise<TicketListItem[]> {
       .in('id', categoryIds);
 
     if (categoryError) {
-      throw new Error(`Kategori bilgileri yüklenemedi: ${categoryError.message}`);
+      throw new Error(
+        `Kategori bilgileri yüklenemedi: ${categoryError.message}`,
+      );
     }
 
     categoryNames = new Map(
@@ -247,11 +280,231 @@ export async function getTicketPeople(
   });
 
   if (error) {
-    throw new Error(
-      `Kullanıcı bilgileri yüklenemedi: ${error.message}`,
-    );
+    throw new Error(`Kullanıcı bilgileri yüklenemedi: ${error.message}`);
   }
 
   return (data ?? []) as TicketPerson[];
 }
 
+export async function getCurrentUserContext(): Promise<CurrentUserContext> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError) {
+    throw new Error(`Kullanıcı bilgisi alınamadı: ${userError.message}`);
+  }
+
+  if (!user) {
+    throw new Error('Oturum açmanız gerekiyor.');
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+
+  if (profileError) {
+    throw new Error(`Kullanıcı rolü alınamadı: ${profileError.message}`);
+  }
+
+  return {
+    userId: user.id,
+    role: profile.role as CurrentUserContext['role'],
+  };
+}
+
+export async function updateTicketStatus(
+  ticketId: string,
+  newStatus: TicketStatus,
+): Promise<void> {
+  const { error } = await supabase.rpc('update_ticket_status', {
+    p_ticket_id: ticketId,
+    p_new_status: newStatus,
+  });
+
+  if (error) {
+    throw new Error(`Servis durumu güncellenemedi: ${error.message}`);
+  }
+}
+
+export async function getAssignableTechnicians(): Promise<AssignableTechnician[]> {
+  const { data, error } = await supabase.rpc('get_assignable_technicians');
+
+  if (error) {
+    throw new Error(`Teknisyen listesi yüklenemedi: ${error.message}`);
+  }
+
+  return (data ?? []) as AssignableTechnician[];
+}
+
+export async function assignTicket(
+  ticketId: string,
+  technicianId: string | null,
+): Promise<void> {
+  const { error } = await supabase.rpc('assign_ticket', {
+    p_ticket_id: ticketId,
+    p_technician_id: technicianId,
+  });
+
+  if (error) {
+    throw new Error(`Teknisyen ataması yapılamadı: ${error.message}`);
+  }
+}
+
+
+export type Part = {
+  id: string;
+  code: string;
+  name: string;
+  unit: string;
+  stock_quantity: number;
+};
+
+export type TicketStockMovement = {
+  id: string;
+  part_id: string;
+  ticket_id: string | null;
+  type: 'entry' | 'usage' | 'usage_reversal';
+  quantity: number;
+  reverses_movement_id: string | null;
+  request_id: string;
+  actor_id: string;
+  reason: string | null;
+  created_at: string;
+  part: {
+    code: string;
+    name: string;
+    unit: string;
+  } | null;
+};
+
+export async function getActiveParts(): Promise<Part[]> {
+  const { data, error } = await supabase
+    .from('parts')
+    .select('id, code, name, unit, stock_quantity')
+    .eq('is_active', true)
+    .order('name');
+
+  if (error) {
+    throw new Error(`Parça listesi yüklenemedi: ${error.message}`);
+  }
+
+  return (data ?? []) as Part[];
+}
+
+export async function getTicketStockMovements(
+  ticketId: string,
+): Promise<TicketStockMovement[]> {
+  const { data, error } = await supabase
+    .from('stock_movements')
+    .select(`
+      id,
+      part_id,
+      ticket_id,
+      type,
+      quantity,
+      reverses_movement_id,
+      request_id,
+      actor_id,
+      reason,
+      created_at,
+      part:parts (
+        code,
+        name,
+        unit
+      )
+    `)
+    .eq('ticket_id', ticketId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw new Error(`Stok hareketleri yüklenemedi: ${error.message}`);
+  }
+
+  return (data ?? []) as unknown as TicketStockMovement[];
+}
+
+export async function recordPartUsage(
+  requestId: string,
+  ticketId: string,
+  partId: string,
+  quantity: number,
+  reason: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('use_part', {
+    p_request_id: requestId,
+    p_ticket_id: ticketId,
+    p_part_id: partId,
+    p_quantity: quantity,
+    p_reason: reason.trim(),
+  });
+
+  if (error) {
+    throw new Error(`Parça kullanımı kaydedilemedi: ${error.message}`);
+  }
+}
+
+export async function reversePartUsage(
+  requestId: string,
+  movementId: string,
+  reason: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('reverse_part_usage', {
+    p_request_id: requestId,
+    p_movement_id: movementId,
+    p_reason: reason.trim(),
+  });
+
+  if (error) {
+    throw new Error(`Parça kullanımı geri alınamadı: ${error.message}`);
+  }
+}
+export async function createStockEntry(
+  requestId: string,
+  partId: string,
+  quantity: number,
+  reason: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('create_stock_entry', {
+    p_request_id: requestId,
+    p_part_id: partId,
+    p_quantity: quantity,
+    p_reason: reason.trim(),
+  });
+
+  if (error) {
+    throw new Error(`Stok girişi yapılamadı: ${error.message}`);
+  }
+}
+export async function getStockMovementHistory(): Promise<
+  StockMovementHistoryItem[]
+> {
+  const { data, error } = await supabase.rpc(
+    'get_stock_movement_history',
+  );
+
+  if (error) {
+    throw new Error(`Stok hareket geçmişi yüklenemedi: ${error.message}`);
+  }
+
+  return (data ?? []) as StockMovementHistoryItem[];
+}
+
+export type StockMovementHistoryItem = {
+  id: string;
+  part_id: string;
+  part_code: string;
+  part_name: string;
+  unit: string;
+  ticket_id: string | null;
+  ticket_no: string | null;
+  movement_type: 'entry' | 'usage' | 'usage_reversal';
+  quantity: number;
+  reason: string | null;
+  actor_id: string;
+  actor_name: string;
+  created_at: string;
+};
