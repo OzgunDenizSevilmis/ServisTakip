@@ -7,6 +7,7 @@ import { PartsScreen } from '../features/parts/PartsScreen';
 import { ProfileScreen } from '../features/profile/ProfileScreen';
 import { TicketsScreen } from '../features/tickets/TicketsScreen';
 import { TicketDetailScreen } from '../features/tickets/TicketDetailScreen';
+import { NotificationsScreen } from '../features/notifications/NotificationsScreen';
 
 import type {
   AppTabParamList,
@@ -91,6 +92,7 @@ export function AppStack() {
         name="TicketDetail"
         component={TicketDetailScreen}
       />
+      <Stack.Screen name="Notifications" component={NotificationsScreen} />
     </Stack.Navigator>
   );
 }
