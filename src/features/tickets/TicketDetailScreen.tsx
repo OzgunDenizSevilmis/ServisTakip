@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -20,6 +21,7 @@ import {
   getAssignableTechnicians,
   getCurrentUserContext,
   getTicketDetail,
+  getTicketAttachments,
   getTicketHistory,
   getTicketPeople,
   getTicketStockMovements,
@@ -30,10 +32,14 @@ import {
   type CurrentUserContext,
   type Part,
   type TicketDetail,
+  type TicketAttachmentWithUrl,
   type TicketHistoryItem,
   type TicketPerson,
   type TicketStatus,
   type TicketStockMovement,
+  getTicketMessages,
+sendTicketMessage,
+type TicketMessage,
 } from '../../services/tickets/ticketService';
 import { colors, spacing, typography } from '../../theme';
 
@@ -174,55 +180,45 @@ function getAvailableStatusTransitions(
   role: CurrentUserContext['role'],
   assignedTo: string | null,
   userId: string,
+  createdBy: string,
 ): TicketStatus[] {
-  if (role === 'employee') return [];
+  // Yönetici tüm durumlar arasında geçiş yapabilir.
+  if (role === 'manager') {
+    const allStatuses: TicketStatus[] = [
+      'open',
+      'assigned',
+      'in_progress',
+      'waiting_parts',
+      'resolved',
+      'closed',
+      'cancelled',
+    ];
 
-  if (role === 'technician' && assignedTo !== userId) {
+    return allStatuses.filter((nextStatus) => nextStatus !== status);
+  }
+
+  // Çalışan yalnızca kendi kaydının çözümünü kabul veya reddedebilir.
+  if (role === 'employee') {
+    if (createdBy === userId && status === 'resolved') {
+      return ['closed', 'in_progress'];
+    }
+
     return [];
   }
 
-  let transitions: TicketStatus[] = [];
+  // Teknisyen yalnızca kendisine atanmış kaydı yönetebilir.
+  if (assignedTo !== userId) return [];
 
   switch (status) {
-    case 'open':
-      if (assignedTo) transitions = ['assigned'];
-      break;
-
     case 'assigned':
-      transitions = ['in_progress'];
-      break;
-
+      return ['in_progress'];
     case 'in_progress':
-      transitions = ['waiting_parts', 'resolved'];
-      break;
-
+      return ['waiting_parts', 'resolved'];
     case 'waiting_parts':
-      transitions = ['in_progress', 'resolved'];
-      break;
-
-    case 'resolved':
-      transitions = ['in_progress'];
-
-      if (role === 'manager') {
-        transitions.push('closed');
-      }
-      break;
-
-    case 'closed':
-    case 'cancelled':
-      transitions = [];
-      break;
+      return ['in_progress', 'resolved'];
+    default:
+      return [];
   }
-
-  if (
-    role === 'manager' &&
-    status !== 'closed' &&
-    status !== 'cancelled'
-  ) {
-    transitions.push('cancelled');
-  }
-
-  return transitions;
 }
 
 function InfoRow({
@@ -246,6 +242,7 @@ export function TicketDetailScreen({ route, navigation }: Props) {
 
   const [ticket, setTicket] = useState<TicketDetail | null>(null);
   const [history, setHistory] = useState<TicketHistoryItem[]>([]);
+  const [attachments, setAttachments] = useState<TicketAttachmentWithUrl[]>([]);
   const [people, setPeople] = useState<TicketPerson[]>([]);
   const [technicians, setTechnicians] = useState<AssignableTechnician[]>([]);
   const [currentUser, setCurrentUser] =
@@ -259,6 +256,13 @@ export function TicketDetailScreen({ route, navigation }: Props) {
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
   const [partQuantity, setPartQuantity] = useState('1');
   const [partReason, setPartReason] = useState('');
+  const [statusNote, setStatusNote] = useState('');
+  const [messages, setMessages] = useState<TicketMessage[]>([]);
+const [messageText, setMessageText] = useState('');
+const [sendingMessage, setSendingMessage] = useState(false);
+const [messageError, setMessageError] = useState<string | null>(null);
+
+
 
   const [reversingMovementId, setReversingMovementId] = useState<
     string | null
@@ -294,14 +298,16 @@ const [stockEntryMessage, setStockEntryMessage] = useState<string | null>(null);
   const fetchTicket = useCallback(async () => {
     const userContext = await getCurrentUserContext();
 
-    const [
-      ticketData,
-      historyData,
-      peopleData,
-      technicianData,
-      partData,
-      movementData,
-    ] = await Promise.all([
+ const [
+  ticketData,
+  historyData,
+  peopleData,
+  technicianData,
+  partData,
+  movementData,
+  attachmentData,
+  messageData,
+] = await Promise.all([
       getTicketDetail(ticketId),
       getTicketHistory(ticketId),
       getTicketPeople(ticketId),
@@ -310,6 +316,8 @@ const [stockEntryMessage, setStockEntryMessage] = useState<string | null>(null);
         : Promise.resolve([]),
       getActiveParts(),
       getTicketStockMovements(ticketId),
+      getTicketAttachments(ticketId),
+      getTicketMessages(ticketId),
     ]);
 
     return {
@@ -319,7 +327,9 @@ const [stockEntryMessage, setStockEntryMessage] = useState<string | null>(null);
       technicianData,
       partData,
       movementData,
+      attachmentData,
       userContext,
+      messageData,
     };
   }, [ticketId]);
 const applyTicketData = useCallback(
@@ -330,7 +340,9 @@ const applyTicketData = useCallback(
     setTechnicians(data.technicianData);
     setParts(data.partData);
     setStockMovements(data.movementData);
+    setAttachments(data.attachmentData);
     setCurrentUser(data.userContext);
+    setMessages(data.messageData);
   },
   [],
 );
@@ -402,28 +414,78 @@ const applyTicketData = useCallback(
     applyTicketData(data);
   };
 
-  const handleStatusChange = async (newStatus: TicketStatus) => {
-    if (!ticket || updatingStatus || updatingAssignment) return;
+const handleStatusChange = async (newStatus: TicketStatus) => {
+  if (!ticket || updatingStatus || updatingAssignment) return;
 
-    setUpdatingStatus(true);
-    setStatusError(null);
-    setStatusMessage(null);
+  const requiresNote =
+    newStatus === 'cancelled' ||
+    (ticket.status === 'resolved' && newStatus === 'in_progress');
 
-    try {
-      await updateTicketStatus(ticket.id, newStatus);
-      await refreshTicketData();
+  if (requiresNote && !statusNote.trim()) {
+    setStatusError('Bu işlem için açıklama girmeniz gerekiyor.');
+    return;
+  }
 
-      setStatusMessage('Servis durumu başarıyla güncellendi.');
-    } catch (err) {
-      setStatusError(
-        err instanceof Error
-          ? err.message
-          : 'Servis durumu güncellenirken bir hata oluştu.',
-      );
-    } finally {
-      setUpdatingStatus(false);
-    }
-  };
+  setUpdatingStatus(true);
+  setStatusError(null);
+  setStatusMessage(null);
+
+  try {
+    await updateTicketStatus(
+      ticket,
+      newStatus,
+      requiresNote ? statusNote : undefined,
+    );
+
+    setStatusNote('');
+    await refreshTicketData();
+
+    setStatusMessage('Servis durumu başarıyla güncellendi.');
+  } catch (err) {
+    setStatusError(
+      err instanceof Error
+        ? err.message
+        : 'Servis durumu güncellenirken bir hata oluştu.',
+    );
+  } finally {
+    setUpdatingStatus(false);
+  }
+};
+
+const handleSendMessage = async () => {
+  if (
+    !ticket ||
+    !currentUser ||
+    !messageText.trim() ||
+    sendingMessage ||
+    ticket.status === 'closed' ||
+    ticket.status === 'cancelled'
+  ) {
+    return;
+  }
+
+  setSendingMessage(true);
+  setMessageError(null);
+
+  try {
+    await sendTicketMessage(ticket.id, messageText);
+
+    setMessageText('');
+
+    const updatedMessages = await getTicketMessages(ticket.id);
+    setMessages(updatedMessages);
+  } catch (err) {
+    setMessageError(
+      err instanceof Error
+        ? err.message
+        : 'Mesaj gönderilemedi.',
+    );
+  } finally {
+    setSendingMessage(false);
+  }
+};
+
+
 
   const handleAssignmentChange = async (technicianId: string | null) => {
     if (!ticket || updatingAssignment || updatingStatus) return;
@@ -611,15 +673,17 @@ const applyTicketData = useCallback(
     }
   };
 
-  const availableStatuses =
-    ticket && currentUser
-      ? getAvailableStatusTransitions(
-          ticket.status,
-          currentUser.role,
-          ticket.assigned_to,
-          currentUser.userId,
-        )
-      : [];
+const availableStatuses =
+  ticket && currentUser
+    ? getAvailableStatusTransitions(
+        ticket.status,
+        currentUser.role,
+        ticket.assigned_to,
+        currentUser.userId,
+        ticket.created_by,
+      )
+    : [];
+
 
   const canUseParts =
     ticket?.status === 'in_progress' &&
@@ -920,24 +984,63 @@ const applyTicketData = useCallback(
 
               <View style={styles.infoCard}>
                 <Text style={styles.infoValue}>
-                  Bu servis kaydının durumunu güncelleyebilirsiniz.
+                  {currentUser?.role === 'employee'
+                    ? 'Servis çözümünü kabul edebilir veya gerekçenizle reddedebilirsiniz.'
+                    : 'Bu servis kaydının durumunu güncelleyebilirsiniz.'}
                 </Text>
 
-                {availableStatuses.map((status) => (
-                  <Pressable
-                    key={status}
-                    style={[
-                      styles.statusActionButton,
-                      updatingStatus && styles.disabledButton,
-                    ]}
-                    onPress={() => handleStatusChange(status)}
-                    disabled={updatingStatus || updatingAssignment}
-                  >
-                    <Text style={styles.statusActionText}>
-                      {statusLabels[status]}
+                {((currentUser?.role === 'employee' && ticket.status === 'resolved') ||
+                  (currentUser?.role === 'manager' && availableStatuses.includes('cancelled'))) && (
+                  <>
+                    <Text style={styles.inputLabel}>
+                      {currentUser?.role === 'employee'
+                        ? 'Çözümü reddetme açıklaması'
+                        : 'İşlem açıklaması (iptal için zorunlu)'}
                     </Text>
-                  </Pressable>
-                ))}
+                    <TextInput
+                      style={[styles.textInput, styles.multilineInput]}
+                      value={statusNote}
+                      onChangeText={(value) => {
+                        setStatusNote(value);
+                        if (statusError) setStatusError(null);
+                      }}
+                      placeholder={
+                        currentUser?.role === 'employee'
+                          ? 'Sorunun neden devam ettiğini açıklayın...'
+                          : 'İşlem veya iptal gerekçesini yazın...'
+                      }
+                      placeholderTextColor={colors.textMuted}
+                      multiline
+                      textAlignVertical="top"
+                      editable={!updatingStatus}
+                    />
+                  </>
+                )}
+
+                {availableStatuses.map((status) => {
+                  const actionLabel =
+                    currentUser?.role === 'employee'
+                      ? status === 'closed'
+                        ? 'Çözümü Kabul Et'
+                        : 'Çözümü Reddet ve Teknisyene Gönder'
+                      : status === 'cancelled'
+                        ? 'Servis Kaydını İptal Et'
+                        : statusLabels[status];
+
+                  return (
+                    <Pressable
+                      key={status}
+                      style={[
+                        styles.statusActionButton,
+                        updatingStatus && styles.disabledButton,
+                      ]}
+                      onPress={() => handleStatusChange(status)}
+                      disabled={updatingStatus || updatingAssignment}
+                    >
+                      <Text style={styles.statusActionText}>{actionLabel}</Text>
+                    </Pressable>
+                  );
+                })}
 
                 {updatingStatus && (
                   <View style={styles.statusFeedback}>
@@ -1276,6 +1379,36 @@ const applyTicketData = useCallback(
             </View>
           </View>
 
+          {/* Servis fotoğrafları */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              Servis Fotoğrafları ({attachments.length}/3)
+            </Text>
+
+            <View style={styles.infoCard}>
+              {attachments.length === 0 ? (
+                <Text style={styles.emptyText}>
+                  Bu servis kaydına henüz fotoğraf eklenmemiş.
+                </Text>
+              ) : (
+                attachments.map((attachment, index) => (
+                  <View key={attachment.id} style={styles.attachmentCard}>
+                    <Image
+                      source={{ uri: attachment.signedUrl }}
+                      style={styles.attachmentImage}
+                      resizeMode="cover"
+                      accessibilityLabel={`Servis fotoğrafı ${index + 1}`}
+                    />
+
+                    <Text style={styles.attachmentDate}>
+                      {formatDate(attachment.created_at)}
+                    </Text>
+                  </View>
+                ))
+              )}
+            </View>
+          </View>
+
           {/* Açıklama */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Açıklama</Text>
@@ -1286,7 +1419,96 @@ const applyTicketData = useCallback(
               </Text>
             </View>
           </View>
+{/* Mesajlaşma */}
+<View style={styles.section}>
+  <Text style={styles.sectionTitle}>Mesajlaşma</Text>
 
+  <View style={styles.infoCard}>
+    {messages.length === 0 ? (
+      <Text style={styles.emptyText}>
+        Bu servis kaydı için henüz mesaj bulunmuyor.
+      </Text>
+    ) : (
+      messages.map((message) => {
+        const isCurrentUser =
+          message.author_id === currentUser?.userId;
+
+        return (
+          <View
+            key={message.id}
+            style={[
+              styles.messageCard,
+              isCurrentUser && styles.currentUserMessage,
+            ]}
+          >
+            <View style={styles.messageHeader}>
+              <Text style={styles.messageAuthor}>
+                {isCurrentUser
+                  ? 'Siz'
+                  : getPersonName(message.author_id)}
+              </Text>
+
+              <Text style={styles.messageDate}>
+                {formatDate(message.created_at)}
+              </Text>
+            </View>
+
+            <Text style={styles.messageBody}>
+              {message.body}
+            </Text>
+          </View>
+        );
+      })
+    )}
+
+    {ticket.status === 'closed' ||
+    ticket.status === 'cancelled' ? (
+      <Text style={styles.emptyText}>
+        Servis kaydı kapatıldığı veya iptal edildiği için
+        yeni mesaj gönderilemez.
+      </Text>
+    ) : (
+      <>
+        <TextInput
+          style={[styles.textInput, styles.multilineInput]}
+          value={messageText}
+          onChangeText={(value) => {
+            setMessageText(value);
+            if (messageError) setMessageError(null);
+          }}
+          placeholder="Mesajınızı yazın..."
+          placeholderTextColor={colors.textMuted}
+          multiline
+          maxLength={5000}
+          textAlignVertical="top"
+          editable={!sendingMessage}
+        />
+
+        <Pressable
+          style={[
+            styles.primaryButton,
+            (!messageText.trim() || sendingMessage) &&
+              styles.disabledButton,
+          ]}
+          onPress={handleSendMessage}
+          disabled={!messageText.trim() || sendingMessage}
+        >
+          {sendingMessage ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.primaryButtonText}>
+              Mesaj Gönder
+            </Text>
+          )}
+        </Pressable>
+      </>
+    )}
+
+    {messageError && (
+      <Text style={styles.errorText}>{messageError}</Text>
+    )}
+  </View>
+</View>
           {/* İşlem geçmişi */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>İşlem Geçmişi</Text>
@@ -1461,6 +1683,19 @@ const styles = StyleSheet.create({
     color: colors.text,
     lineHeight: 24,
   },
+  attachmentCard: {
+    gap: spacing.sm,
+  },
+  attachmentImage: {
+    width: '100%',
+    height: 220,
+    borderRadius: 12,
+    backgroundColor: colors.background,
+  },
+  attachmentDate: {
+    ...typography.caption,
+    color: colors.textMuted,
+  },
   emptyText: {
     ...typography.body,
     color: colors.textMuted,
@@ -1492,6 +1727,44 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.lg,
     gap: spacing.xs,
   },
+  messageCard: {
+  backgroundColor: colors.background,
+  borderRadius: 10,
+  padding: spacing.md,
+  gap: spacing.sm,
+  borderWidth: 1,
+  borderColor: colors.border,
+},
+
+currentUserMessage: {
+  borderColor: colors.primary,
+  backgroundColor: colors.primaryBackground,
+},
+
+messageHeader: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  gap: spacing.xs,
+},
+
+messageAuthor: {
+  ...typography.body,
+  color: colors.text,
+  fontWeight: '700',
+},
+
+messageDate: {
+  ...typography.caption,
+  color: colors.textMuted,
+},
+
+messageBody: {
+  ...typography.body,
+  color: colors.text,
+  lineHeight: 22,
+},
   historyTitle: {
     ...typography.body,
     color: colors.text,

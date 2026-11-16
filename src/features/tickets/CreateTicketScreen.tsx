@@ -1,7 +1,9 @@
+
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,11 +11,15 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   createTicket,
   getActiveCategories,
+  uploadTicketAttachment,
+  type TicketAttachmentInput,
   type TicketCategory,
 } from '../../services/tickets';
 import { colors, spacing, typography } from '../../theme';
@@ -26,9 +32,16 @@ const priorities: { label: string; value: Priority }[] = [
   { label: 'Yüksek', value: 'high' },
 ];
 
+type SelectedPhoto = TicketAttachmentInput & {
+  id: string;
+};
+
 type Props = {
   onSuccess?: () => void;
 };
+
+const MAX_PHOTOS = 3;
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
 export function CreateTicketScreen({ onSuccess }: Props) {
   const insets = useSafeAreaInsets();
@@ -39,6 +52,7 @@ export function CreateTicketScreen({ onSuccess }: Props) {
   const [categoryId, setCategoryId] = useState('');
   const [priority, setPriority] = useState<Priority>('normal');
 
+  const [photos, setPhotos] = useState<SelectedPhoto[]>([]);
   const [categories, setCategories] = useState<TicketCategory[]>([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -76,6 +90,88 @@ export function CreateTicketScreen({ onSuccess }: Props) {
     };
   }, []);
 
+  async function handleSelectPhotos() {
+    if (photos.length >= MAX_PHOTOS) {
+      Alert.alert(
+        'Fotoğraf sınırı',
+        'Bir servis kaydına en fazla 3 fotoğraf ekleyebilirsiniz.',
+      );
+      return;
+    }
+
+    const permission =
+      await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permission.granted) {
+      Alert.alert(
+        'İzin gerekli',
+        'Fotoğraf seçebilmek için galeri erişim izni vermelisiniz.',
+      );
+      return;
+    }
+
+    const remaining = MAX_PHOTOS - photos.length;
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      selectionLimit: remaining,
+      quality: 0.8,
+    });
+
+    if (result.canceled) {
+      return;
+    }
+
+    const selectedPhotos: SelectedPhoto[] = [];
+
+    for (const asset of result.assets) {
+      const mimeType = asset.mimeType;
+
+      if (mimeType !== 'image/jpeg' && mimeType !== 'image/png') {
+        Alert.alert(
+          'Geçersiz dosya',
+          'Yalnızca JPEG ve PNG fotoğrafları seçebilirsiniz.',
+        );
+        continue;
+      }
+
+      if (!asset.fileSize || asset.fileSize > MAX_FILE_SIZE) {
+        Alert.alert(
+          'Dosya boyutu',
+          'Fotoğrafların boyutu 5 MB sınırını aşmamalıdır.',
+        );
+        continue;
+      }
+
+      selectedPhotos.push({
+        id: `${Date.now()}-${Math.random()}`,
+        uri: asset.uri,
+        mimeType,
+        fileSize: asset.fileSize,
+      });
+    }
+
+    setPhotos((current) =>
+      [...current, ...selectedPhotos].slice(0, MAX_PHOTOS),
+    );
+  }
+
+  function handleRemovePhoto(photoId: string) {
+    setPhotos((current) =>
+      current.filter((photo) => photo.id !== photoId),
+    );
+  }
+
+  function resetForm() {
+    setTitle('');
+    setDescription('');
+    setLocation('');
+    setCategoryId('');
+    setPriority('normal');
+    setPhotos([]);
+  }
+
   async function handleSubmit() {
     if (!title.trim()) {
       Alert.alert('Eksik bilgi', 'Lütfen servis kaydı başlığını girin.');
@@ -99,8 +195,11 @@ export function CreateTicketScreen({ onSuccess }: Props) {
 
     setIsSubmitting(true);
 
+    let createdTicket: { id: string; ticket_no: string | null } | null =
+      null;
+
     try {
-      const ticket = await createTicket({
+      createdTicket = await createTicket({
         title,
         description,
         categoryId,
@@ -108,30 +207,45 @@ export function CreateTicketScreen({ onSuccess }: Props) {
         priority,
       });
 
+      for (const photo of photos) {
+        await uploadTicketAttachment(createdTicket.id, {
+          uri: photo.uri,
+          mimeType: photo.mimeType,
+          fileSize: photo.fileSize,
+        });
+      }
+
       Alert.alert(
         'Başarılı',
-        `Servis kaydı oluşturuldu${ticket.ticket_no ? `: ${ticket.ticket_no}` : '.'}`,
+        `Servis kaydı oluşturuldu${
+          createdTicket.ticket_no
+            ? `: ${createdTicket.ticket_no}`
+            : '.'
+        }`,
         [
           {
             text: 'Tamam',
             onPress: () => {
-              setTitle('');
-              setDescription('');
-              setLocation('');
-              setCategoryId('');
-              setPriority('normal');
+              resetForm();
               onSuccess?.();
             },
           },
         ],
       );
     } catch (error) {
-      Alert.alert(
-        'Kayıt hatası',
+      const message =
         error instanceof Error
           ? error.message
-          : 'Servis kaydı oluşturulamadı.',
-      );
+          : 'Servis kaydı oluşturulamadı.';
+
+      if (createdTicket) {
+        Alert.alert(
+          'Fotoğraf yükleme hatası',
+          `Servis kaydı (${createdTicket.ticket_no ?? createdTicket.id}) oluşturuldu ancak fotoğrafların tamamı yüklenemedi.\n\n${message}\n\nKayıt tekrar oluşturulmayacaktır.`,
+        );
+      } else {
+        Alert.alert('Kayıt hatası', message);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -183,10 +297,13 @@ export function CreateTicketScreen({ onSuccess }: Props) {
           />
 
           <Text style={styles.label}>Kategori</Text>
+
           {isLoadingCategories ? (
             <ActivityIndicator color={colors.primary} />
           ) : categories.length === 0 ? (
-            <Text style={styles.helperText}>Aktif kategori bulunamadı.</Text>
+            <Text style={styles.helperText}>
+              Aktif kategori bulunamadı.
+            </Text>
           ) : (
             <View style={styles.optionsContainer}>
               {categories.map((category) => {
@@ -250,6 +367,58 @@ export function CreateTicketScreen({ onSuccess }: Props) {
                 </Pressable>
               );
             })}
+          </View>
+
+          <View style={styles.photoSection}>
+            <View style={styles.photoHeader}>
+              <Text style={styles.label}>Fotoğraflar</Text>
+              <Text style={styles.photoCount}>
+                {photos.length}/{MAX_PHOTOS}
+              </Text>
+            </View>
+
+            <Text style={styles.helperText}>
+              Sorunu göstermek için en fazla 3 JPEG veya PNG fotoğraf
+              ekleyebilirsiniz. Her fotoğraf en fazla 5 MB olabilir.
+            </Text>
+
+            <View style={styles.photoList}>
+              {photos.map((photo) => (
+                <View key={photo.id} style={styles.photoItem}>
+                  <Image
+                    source={{ uri: photo.uri }}
+                    style={styles.photoPreview}
+                  />
+
+                  <Pressable
+                    onPress={() => handleRemovePhoto(photo.id)}
+                    style={styles.removePhotoButton}
+                    disabled={isSubmitting}
+                  >
+                    <Ionicons
+                      name="close-circle"
+                      size={25}
+                      color={colors.danger}
+                    />
+                  </Pressable>
+                </View>
+              ))}
+
+              {photos.length < MAX_PHOTOS && (
+                <Pressable
+                  onPress={() => void handleSelectPhotos()}
+                  style={styles.addPhotoButton}
+                  disabled={isSubmitting}
+                >
+                  <Ionicons
+                    name="camera-outline"
+                    size={28}
+                    color={colors.primary}
+                  />
+                  <Text style={styles.addPhotoText}>Fotoğraf ekle</Text>
+                </Pressable>
+              )}
+            </View>
           </View>
 
           <Pressable
@@ -357,6 +526,59 @@ const styles = StyleSheet.create({
   helperText: {
     ...typography.body,
     color: colors.textMuted,
+  },
+  photoSection: {
+    marginTop: spacing.md,
+  },
+  photoHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  photoCount: {
+    ...typography.caption,
+    color: colors.textMuted,
+  },
+  photoList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+    marginTop: spacing.md,
+  },
+  photoItem: {
+    width: 100,
+    height: 100,
+    position: 'relative',
+  },
+  photoPreview: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 12,
+    backgroundColor: colors.background,
+  },
+  removePhotoButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+  },
+  addPhotoButton: {
+    width: 100,
+    height: 100,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.primary,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.background,
+  },
+  addPhotoText: {
+    ...typography.caption,
+    color: colors.primary,
+    fontWeight: '600',
   },
   submitButton: {
     marginTop: spacing.xl,

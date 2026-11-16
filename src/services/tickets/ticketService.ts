@@ -51,6 +51,7 @@ export type TicketDetail = {
   created_by: string;
   assigned_to: string | null;
   due_at: string | null;
+  version: number;
   created_at: string;
   updated_at: string;
 };
@@ -65,6 +66,15 @@ export type TicketHistoryItem = {
   note: string | null;
   created_at: string;
 };
+
+export type TicketMessage = {
+  id: string;
+  ticket_id: string;
+  author_id: string;
+  body: string;
+  created_at: string;
+};
+
 
 export type TicketPerson = {
   user_id: string;
@@ -220,9 +230,9 @@ export async function getTicketDetail(
 ): Promise<TicketDetail> {
   const { data: ticket, error } = await supabase
     .from('tickets')
-    .select(
-      'id, ticket_no, title, description, location, priority, status, category_id, created_by, assigned_to, due_at, created_at, updated_at',
-    )
+ .select(
+  'id, ticket_no, title, description, location, priority, status, category_id, created_by, assigned_to, due_at, version, created_at, updated_at',
+)
     .eq('id', ticketId)
     .single();
 
@@ -272,6 +282,47 @@ export async function getTicketHistory(
   return data ?? [];
 }
 
+export async function getTicketMessages(
+  ticketId: string,
+): Promise<TicketMessage[]> {
+  const { data, error } = await supabase
+    .from('ticket_messages')
+    .select('id, ticket_id, author_id, body, created_at')
+    .eq('ticket_id', ticketId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw new Error(`Mesajlar yüklenemedi: ${error.message}`);
+  }
+
+  return (data ?? []) as TicketMessage[];
+}
+export async function sendTicketMessage(
+  ticketId: string,
+  body: string,
+): Promise<TicketMessage> {
+  const trimmedBody = body.trim();
+
+  if (!trimmedBody) {
+    throw new Error('Mesaj boş olamaz.');
+  }
+
+  if (trimmedBody.length > 5000) {
+    throw new Error('Mesaj 5000 karakterden uzun olamaz.');
+  }
+
+  const { data, error } = await supabase.rpc('add_ticket_message', {
+    p_ticket_id: ticketId,
+    p_body: trimmedBody,
+  });
+
+  if (error) {
+    throw new Error(`Mesaj gönderilemedi: ${error.message}`);
+  }
+
+  return data as TicketMessage;
+}
+
 export async function getTicketPeople(
   ticketId: string,
 ): Promise<TicketPerson[]> {
@@ -317,12 +368,16 @@ export async function getCurrentUserContext(): Promise<CurrentUserContext> {
 }
 
 export async function updateTicketStatus(
-  ticketId: string,
+  ticket: Pick<TicketDetail, 'id' | 'status' | 'version'>,
   newStatus: TicketStatus,
+  note?: string,
 ): Promise<void> {
-  const { error } = await supabase.rpc('update_ticket_status', {
-    p_ticket_id: ticketId,
-    p_new_status: newStatus,
+  const { error } = await supabase.rpc('transition_ticket', {
+    p_ticket_id: ticket.id,
+    p_to_status: newStatus,
+    p_expected_status: ticket.status,
+    p_expected_version: ticket.version,
+    p_note: note?.trim() || null,
   });
 
   if (error) {
@@ -361,6 +416,13 @@ export type Part = {
   name: string;
   unit: string;
   stock_quantity: number;
+    is_active: boolean;
+};
+
+export type PartInput = {
+  code: string;
+  name: string;
+  unit: string;
 };
 
 export type TicketStockMovement = {
@@ -381,18 +443,29 @@ export type TicketStockMovement = {
   } | null;
 };
 
-export async function getActiveParts(): Promise<Part[]> {
-  const { data, error } = await supabase
+export async function getParts(
+  includeInactive = false,
+): Promise<Part[]> {
+  let query = supabase
     .from('parts')
-    .select('id, code, name, unit, stock_quantity')
-    .eq('is_active', true)
+    .select('id, code, name, unit, stock_quantity, is_active')
     .order('name');
+
+  if (!includeInactive) {
+    query = query.eq('is_active', true);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw new Error(`Parça listesi yüklenemedi: ${error.message}`);
   }
 
   return (data ?? []) as Part[];
+}
+
+export async function getActiveParts(): Promise<Part[]> {
+  return getParts(false);
 }
 
 export async function getTicketStockMovements(
@@ -447,6 +520,64 @@ export async function recordPartUsage(
   }
 }
 
+export async function addPart(input: PartInput): Promise<Part> {
+  console.log('[addPart] Input:', input);
+  console.log('[addPart] Supabase RPC:', typeof supabase.rpc);
+
+  const { data, error } = await supabase.rpc('add_part', {
+    p_code: input.code.trim(),
+    p_name: input.name.trim(),
+    p_unit: input.unit.trim(),
+  });
+
+  console.log('[addPart] Response:', { data, error });
+
+  if (error) {
+    console.error('[addPart] Supabase error:', error);
+    throw new Error(`Parça eklenemedi: ${error.message}`);
+  }
+
+  return data as Part;
+}
+
+export async function updatePart(
+  partId: string,
+  input: PartInput,
+): Promise<Part> {
+  const { data, error } = await supabase.rpc('update_part', {
+    p_part_id: partId,
+    p_code: input.code.trim(),
+    p_name: input.name.trim(),
+    p_unit: input.unit.trim(),
+  });
+
+  if (error) {
+    throw new Error(`Parça güncellenemedi: ${error.message}`);
+  }
+
+  return data as Part;
+}
+
+export async function setPartActive(
+  partId: string,
+  isActive: boolean,
+): Promise<Part> {
+  const { data, error } = await supabase.rpc('set_part_active', {
+    p_part_id: partId,
+    p_is_active: isActive,
+  });
+
+  if (error) {
+    throw new Error(
+      isActive
+        ? `Parça aktifleştirilemedi: ${error.message}`
+        : `Parça pasife alınamadı: ${error.message}`,
+    );
+  }
+
+  return data as Part;
+}
+
 export async function reversePartUsage(
   requestId: string,
   movementId: string,
@@ -493,6 +624,8 @@ export async function getStockMovementHistory(): Promise<
   return (data ?? []) as StockMovementHistoryItem[];
 }
 
+
+
 export type StockMovementHistoryItem = {
   id: string;
   part_id: string;
@@ -508,3 +641,213 @@ export type StockMovementHistoryItem = {
   actor_name: string;
   created_at: string;
 };
+
+
+export type TicketAttachmentInput = {
+  uri: string;
+  mimeType: 'image/jpeg' | 'image/png';
+  fileSize: number;
+};
+
+export type TicketAttachment = {
+  id: string;
+  ticket_id: string;
+  storage_path: string;
+  mime_type: string;
+  file_size_bytes: number;
+  created_at: string;
+};
+
+export type TicketAttachmentWithUrl = TicketAttachment & {
+  signedUrl: string;
+};
+
+
+export async function uploadTicketAttachment(
+  ticketId: string,
+  attachment: TicketAttachmentInput,
+): Promise<string> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    throw new Error('Fotoğraf yüklemek için oturum açmalısınız.');
+  }
+
+  if (
+    attachment.mimeType !== 'image/jpeg' &&
+    attachment.mimeType !== 'image/png'
+  ) {
+    throw new Error('Yalnızca JPEG ve PNG fotoğrafları yüklenebilir.');
+  }
+
+  if (
+    attachment.fileSize < 1 ||
+    attachment.fileSize > 5 * 1024 * 1024
+  ) {
+    throw new Error('Fotoğraf boyutu 5 MB sınırını aşamaz.');
+  }
+
+  const extension =
+    attachment.mimeType === 'image/png' ? 'png' : 'jpg';
+
+  const randomId = `${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2, 12)}`;
+
+  const storagePath = `${ticketId}/${user.id}/${randomId}.${extension}`;
+
+  const response = await fetch(attachment.uri);
+
+  if (!response.ok) {
+    throw new Error('Fotoğraf dosyası okunamadı.');
+  }
+
+  const fileData = await response.arrayBuffer();
+
+  if (fileData.byteLength !== attachment.fileSize) {
+    throw new Error('Fotoğraf dosyasının boyutu doğrulanamadı.');
+  }
+  console.log('Attachment upload debug:', {
+  ticketId,
+  userId: user.id,
+  storagePath,
+  mimeType: attachment.mimeType,
+  fileSize: attachment.fileSize,
+});
+
+console.log('Ticket access RPC başladı');
+
+try {
+  const { data: canAccess, error: accessError } = await supabase.rpc(
+    'can_access_ticket',
+    {
+      p_ticket_id: ticketId,
+    },
+  );
+
+  console.log('Ticket access RPC tamamlandı:', {
+    canAccess,
+    accessError,
+  });
+} catch (error) {
+  console.log('Ticket access RPC exception:', error);
+}
+
+const { data: ticket, error: ticketError } = await supabase
+  .from('tickets')
+  .select('id, status')
+  .eq('id', ticketId)
+  .single();
+
+console.log('Ticket status debug:', {
+  ticket,
+  ticketError,
+});
+
+const { data: policyDebug, error: policyDebugError } =
+  await supabase.rpc('debug_ticket_attachment_policy', {
+    p_ticket_id: ticketId,
+    p_storage_path: storagePath,
+  });
+
+console.log('Storage policy condition debug:', {
+  policyDebug,
+  policyDebugError,
+});
+
+
+
+const { error: uploadError } = await supabase.storage
+  .from('ticket-attachments')
+  .upload(storagePath, fileData, {
+    contentType: attachment.mimeType,
+    upsert: false,
+    metadata: {
+      mimetype: attachment.mimeType,
+      size: attachment.fileSize,
+    },
+  });
+ console.log('Storage upload error details:', {
+  name: uploadError?.name,
+  message: uploadError?.message,
+  statusCode: uploadError?.statusCode,
+  error: uploadError,
+});
+
+  if (uploadError) {
+    throw new Error(`Fotoğraf yüklenemedi: ${uploadError.message}`);
+  }
+
+  const { error: attachmentError } = await supabase.rpc(
+    'create_ticket_attachment',
+    {
+      p_ticket_id: ticketId,
+      p_storage_path: storagePath,
+      p_mime_type: attachment.mimeType,
+      p_file_size_bytes: attachment.fileSize,
+    },
+  );
+
+  if (attachmentError) {
+    // Metadata kaydı başarısızsa yüklenen dosyayı temizle.
+    const { error: cleanupError } = await supabase.storage
+      .from('ticket-attachments')
+      .remove([storagePath]);
+
+    if (cleanupError) {
+      throw new Error(
+        `Fotoğraf kaydı oluşturulamadı: ${attachmentError.message}. ` +
+          `Geçici dosya temizlenemedi: ${cleanupError.message}`,
+      );
+    }
+
+    throw new Error(
+      `Fotoğraf kaydı oluşturulamadı: ${attachmentError.message}`,
+    );
+  }
+
+  return storagePath;
+}
+
+
+export async function getTicketAttachments(
+  ticketId: string,
+): Promise<TicketAttachmentWithUrl[]> {
+  const { data, error } = await supabase
+    .from('ticket_attachments')
+    .select(
+      'id, ticket_id, storage_path, mime_type, file_size_bytes, created_at',
+    )
+    .eq('ticket_id', ticketId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw new Error(`Servis fotoğrafları yüklenemedi: ${error.message}`);
+  }
+
+  const attachments = data ?? [];
+
+  return Promise.all(
+    attachments.map(async (attachment) => {
+      const { data: signedUrlData, error: signedUrlError } =
+        await supabase.storage
+          .from('ticket-attachments')
+          .createSignedUrl(attachment.storage_path, 60 * 60);
+
+      if (signedUrlError) {
+        throw new Error(
+          `Fotoğraf görüntüleme bağlantısı oluşturulamadı: ${signedUrlError.message}`,
+        );
+      }
+
+      return {
+        ...attachment,
+        signedUrl: signedUrlData.signedUrl,
+      };
+    }),
+  );
+}
+

@@ -11,3 +11,13 @@ export type {
   TicketPriority,
   TicketStatus,
 } from './ticketService';
+export {
+  uploadTicketAttachment,
+} from './ticketService';
+
+export type {
+  TicketAttachmentInput,
+  TicketAttachment,
+} from './ticketService';
+
+export { getTicketAttachments } from './ticketService';
