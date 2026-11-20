@@ -1,3 +1,4 @@
+
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,6 +9,8 @@ import { ProfileScreen } from '../features/profile/ProfileScreen';
 import { TicketsScreen } from '../features/tickets/TicketsScreen';
 import { TicketDetailScreen } from '../features/tickets/TicketDetailScreen';
 import { NotificationsScreen } from '../features/notifications/NotificationsScreen';
+import { CategoryManagementScreen } from '../features/categories/CategoryManagementScreen';
+
 
 import type {
   AppTabParamList,
@@ -28,6 +31,12 @@ const tabIcons: Record<
   Parts: 'cube-outline',
   Profile: 'person-outline',
 };
+
+console.log('ProfileScreen:', ProfileScreen);
+console.log('HomeScreen:', HomeScreen);
+console.log('TicketsScreen:', TicketsScreen);
+console.log('PartsScreen:', PartsScreen);
+
 
 function MainTabs() {
   return (
@@ -92,7 +101,15 @@ export function AppStack() {
         name="TicketDetail"
         component={TicketDetailScreen}
       />
-      <Stack.Screen name="Notifications" component={NotificationsScreen} />
+
+      <Stack.Screen
+        name="Notifications"
+        component={NotificationsScreen}
+      />
+      <Stack.Screen
+  name="CategoryManagement"
+  component={CategoryManagementScreen}
+/>
     </Stack.Navigator>
   );
 }

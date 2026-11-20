@@ -4,6 +4,7 @@ import { supabase } from '../supabase/client';
 export type TicketCategory = {
   id: string;
   name: string;
+    is_active?: boolean;
 };
 
 export type CreateTicketInput = {
@@ -104,6 +105,68 @@ export async function getActiveCategories(): Promise<TicketCategory[]> {
   }
 
   return data ?? [];
+}
+
+
+export async function getAllCategories(): Promise<TicketCategory[]> {
+  const { data, error } = await supabase
+    .from('categories')
+    .select('id, name, is_active')
+    .order('name');
+
+  if (error) {
+    throw new Error(`Kategoriler yüklenemedi: ${error.message}`);
+  }
+
+  return data ?? [];
+}
+
+export async function createCategory(name: string): Promise<TicketCategory> {
+  const { data, error } = await supabase.rpc('create_category', {
+    p_name: name.trim(),
+  });
+
+  if (error) {
+    throw new Error(`Kategori oluşturulamadı: ${error.message}`);
+  }
+
+  return data as TicketCategory;
+}
+
+export async function updateCategory(
+  categoryId: string,
+  name: string,
+): Promise<TicketCategory> {
+  const { data, error } = await supabase.rpc('update_category', {
+    p_category_id: categoryId,
+    p_name: name.trim(),
+  });
+
+  if (error) {
+    throw new Error(`Kategori güncellenemedi: ${error.message}`);
+  }
+
+  return data as TicketCategory;
+}
+
+export async function setCategoryActive(
+  categoryId: string,
+  isActive: boolean,
+): Promise<TicketCategory> {
+  const { data, error } = await supabase.rpc('set_category_active', {
+    p_category_id: categoryId,
+    p_is_active: isActive,
+  });
+
+  if (error) {
+    throw new Error(
+      isActive
+        ? `Kategori aktifleştirilemedi: ${error.message}`
+        : `Kategori pasife alınamadı: ${error.message}`,
+    );
+  }
+
+  return data as TicketCategory;
 }
 
 export async function createTicket(input: CreateTicketInput) {
@@ -384,6 +447,22 @@ export async function updateTicketStatus(
     throw new Error(`Servis durumu güncellenemedi: ${error.message}`);
   }
 }
+
+export async function setTicketPriority(
+  ticket: Pick<TicketDetail, 'id' | 'version'>,
+  priority: TicketPriority,
+): Promise<void> {
+  const { error } = await supabase.rpc('set_ticket_priority', {
+    p_ticket_id: ticket.id,
+    p_priority: priority,
+    p_expected_version: ticket.version,
+  });
+
+  if (error) {
+    throw new Error(`Servis önceliği güncellenemedi: ${error.message}`);
+  }
+}
+
 
 export async function getAssignableTechnicians(): Promise<AssignableTechnician[]> {
   const { data, error } = await supabase.rpc('get_assignable_technicians');

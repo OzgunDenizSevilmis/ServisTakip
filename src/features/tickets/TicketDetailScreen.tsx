@@ -28,6 +28,8 @@ import {
   recordPartUsage,
   reversePartUsage,
   updateTicketStatus,
+  setTicketPriority,
+type TicketPriority,
   type AssignableTechnician,
   type CurrentUserContext,
   type Part,
@@ -452,6 +454,39 @@ const handleStatusChange = async (newStatus: TicketStatus) => {
   }
 };
 
+const handlePriorityChange = async (priority: TicketPriority) => {
+  if (
+    !ticket ||
+    currentUser?.role !== 'manager' ||
+    updatingPriority ||
+    ticket.priority === priority ||
+    ['closed', 'cancelled'].includes(ticket.status)
+  ) {
+    return;
+  }
+
+  setUpdatingPriority(true);
+  setPriorityError(null);
+  setPriorityMessage(null);
+
+  try {
+    await setTicketPriority(ticket, priority);
+
+    await refreshTicketData();
+
+    setPriorityMessage('Servis önceliği başarıyla güncellendi.');
+  } catch (err) {
+    setPriorityError(
+      err instanceof Error
+        ? err.message
+        : 'Servis önceliği güncellenemedi.',
+    );
+  } finally {
+    setUpdatingPriority(false);
+  }
+};
+
+
 const handleSendMessage = async () => {
   if (
     !ticket ||
@@ -484,6 +519,10 @@ const handleSendMessage = async () => {
     setSendingMessage(false);
   }
 };
+
+const [updatingPriority, setUpdatingPriority] = useState(false);
+const [priorityError, setPriorityError] = useState<string | null>(null);
+const [priorityMessage, setPriorityMessage] = useState<string | null>(null);
 
 
 
@@ -765,6 +804,61 @@ const availableStatuses =
               </View>
             </View>
           </View>
+          {/* Öncelik yönetimi - Yalnızca yönetici */}
+{currentUser?.role === 'manager' && (
+  <View style={styles.section}>
+    <Text style={styles.sectionTitle}>Öncelik Yönetimi</Text>
+
+    <View style={styles.infoCard}>
+      <Text style={styles.infoLabel}>
+        Mevcut öncelik: {priorityLabels[ticket.priority]}
+      </Text>
+
+      <View style={styles.priorityOptions}>
+        {(['low', 'normal', 'high'] as const).map((priority) => (
+          <Pressable
+            key={priority}
+            style={[
+              styles.priorityOption,
+              ticket.priority === priority &&
+                styles.selectedPriorityOption,
+              updatingPriority && styles.disabledButton,
+            ]}
+            onPress={() => handlePriorityChange(priority)}
+            disabled={
+              updatingPriority ||
+              ticket.priority === priority ||
+              ['closed', 'cancelled'].includes(ticket.status)
+            }
+          >
+            <Text
+              style={[
+                styles.priorityOptionText,
+                ticket.priority === priority &&
+                  styles.selectedPriorityOptionText,
+              ]}
+            >
+              {priorityLabels[priority]}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {updatingPriority && (
+        <ActivityIndicator color={colors.primary} />
+      )}
+
+      {priorityError && (
+        <Text style={styles.errorText}>{priorityError}</Text>
+      )}
+
+      {priorityMessage && (
+        <Text style={styles.successText}>{priorityMessage}</Text>
+      )}
+    </View>
+  </View>
+)}
+  
 
           {/* Teknisyen atama */}
           {currentUser?.role === 'manager' && (
@@ -1548,7 +1642,7 @@ const availableStatuses =
                         {changes.map((change) => (
                           <View
                             key={change.field}
-                            style={styles.changeRow}
+                            style={styles.changeRow}  
                           >
                             <Text style={styles.changeLabel}>
                               {change.label}
@@ -2066,4 +2160,33 @@ messageBody: {
     color: '#FFFFFF',
     fontWeight: '600',
   },
+ priorityOptions: {
+  flexDirection: 'row',
+  gap: spacing.sm,
+},
+
+priorityOption: {
+  flex: 1,
+  alignItems: 'center',
+  paddingVertical: spacing.md,
+  borderWidth: 1,
+  borderColor: colors.border,
+  borderRadius: 10,
+},
+
+selectedPriorityOption: {
+  borderColor: colors.primary,
+  backgroundColor: colors.primaryBackground,
+},
+
+priorityOptionText: {
+  ...typography.body,
+  color: colors.text,
+  fontWeight: '600',
+},
+
+selectedPriorityOptionText: {
+  color: colors.primary,
+  fontWeight: '700',
+},
 });

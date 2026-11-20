@@ -10,12 +10,8 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import {
-  useFocusEffect,
-  useNavigation,
-} from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   getMyNotifications,
@@ -35,12 +31,12 @@ function formatNotificationDate(value: string): string {
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
-    return 'Tarih bilgisi yok';
+    return '';
   }
 
   return date.toLocaleString('tr-TR', {
     day: '2-digit',
-    month: 'long',
+    month: '2-digit',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
@@ -49,7 +45,6 @@ function formatNotificationDate(value: string): string {
 
 export function NotificationsScreen() {
   const navigation = useNavigation<NotificationsNavigationProp>();
-  const insets = useSafeAreaInsets();
 
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -87,9 +82,7 @@ export function NotificationsScreen() {
     }, [loadNotifications]),
   );
 
-  const handleMarkAsRead = async (
-    notificationId: string,
-  ): Promise<boolean> => {
+  const handleMarkAsRead = async (notificationId: string) => {
     try {
       await markNotificationAsRead(notificationId);
 
@@ -103,16 +96,12 @@ export function NotificationsScreen() {
             : notification,
         ),
       );
-
-      return true;
     } catch (error) {
       setErrorMessage(
         error instanceof Error
           ? error.message
           : 'Bildirim güncellenirken bir hata oluştu.',
       );
-
-      return false;
     }
   };
 
@@ -149,15 +138,9 @@ export function NotificationsScreen() {
     }
   };
 
-  const handleNotificationPress = async (
-    notification: NotificationItem,
-  ) => {
+  const handleNotificationPress = async (notification: NotificationItem) => {
     if (notification.read_at === null) {
-      const success = await handleMarkAsRead(notification.id);
-
-      if (!success) {
-        return;
-      }
+      await handleMarkAsRead(notification.id);
     }
 
     if (notification.ticket_id) {
@@ -167,196 +150,94 @@ export function NotificationsScreen() {
     }
   };
 
-  const unreadCount = notifications.filter(
-    (notification) => notification.read_at === null,
-  ).length;
-
-  const renderNotification = ({
-    item,
-  }: {
-    item: NotificationItem;
-  }) => {
+  const renderNotification = ({ item }: { item: NotificationItem }) => {
     const isUnread = item.read_at === null;
 
     return (
       <Pressable
         style={[
           styles.notificationCard,
-          isUnread && styles.unreadCard,
+          isUnread && styles.unreadNotificationCard,
         ]}
         onPress={() => void handleNotificationPress(item)}
       >
-        <View
-          style={[
-            styles.notificationIcon,
-            isUnread && styles.unreadIcon,
-          ]}
-        >
+        <View style={styles.notificationIcon}>
           <Ionicons
-            name={
-              isUnread
-                ? 'notifications'
-                : 'notifications-outline'
-            }
-            size={21}
+            name={isUnread ? 'notifications' : 'notifications-outline'}
+            size={20}
             color={isUnread ? colors.primary : colors.textMuted}
           />
         </View>
 
         <View style={styles.notificationContent}>
-          <View style={styles.notificationTitleRow}>
-            <Text style={styles.notificationMessage}>
+          <View style={styles.notificationHeader}>
+            <Text style={styles.notificationTitle}>
               {item.message}
             </Text>
 
             {isUnread && <View style={styles.unreadDot} />}
           </View>
 
-          <View style={styles.notificationFooter}>
-            <View style={styles.dateContainer}>
-              <Ionicons
-                name="time-outline"
-                size={13}
-                color={colors.textMuted}
-              />
-              <Text style={styles.notificationDate}>
-                {formatNotificationDate(item.created_at)}
-              </Text>
-            </View>
+          <Text style={styles.notificationDate}>
+            {formatNotificationDate(item.created_at)}
+          </Text>
 
-            {item.ticket_id && (
-              <View style={styles.detailLink}>
-                <Text style={styles.detailLinkText}>
-                  Detayı gör
-                </Text>
-                <Ionicons
-                  name="chevron-forward"
-                  size={13}
-                  color={colors.primary}
-                />
-              </View>
-            )}
-          </View>
-
-          <View style={styles.statusContainer}>
-            <View
-              style={[
-                styles.statusIndicator,
-                isUnread ? styles.unreadStatus : styles.readStatus,
-              ]}
-            />
-            <Text
-              style={[
-                styles.statusText,
-                isUnread && styles.unreadStatusText,
-              ]}
-            >
-              {isUnread ? 'Okunmadı' : 'Okundu'}
+          {item.ticket_id && (
+            <Text style={styles.detailHint}>
+              Talep detayını görüntüle
             </Text>
-          </View>
+          )}
         </View>
       </Pressable>
     );
   };
 
+  const unreadCount = notifications.filter(
+    (notification) => notification.read_at === null,
+  ).length;
+
   return (
     <View style={styles.container}>
-      <View
-        style={[
-          styles.headerContainer,
-          { paddingTop: insets.top + spacing.sm },
-        ]}
-      >
-        <View style={styles.navigationHeader}>
-          <Pressable
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-            accessibilityRole="button"
-            accessibilityLabel="Geri dön"
-          >
-            <Ionicons
-              name="arrow-back"
-              size={23}
-              color={colors.text}
-            />
-          </Pressable>
-
-          <Text style={styles.navigationTitle}>Bildirimler</Text>
-
-          <View style={styles.headerRightPlaceholder} />
+      <View style={styles.header}>
+        <View style={styles.headerText}>
+          <Text style={styles.title}>Bildirimler</Text>
+          <Text style={styles.subtitle}>
+            {unreadCount > 0
+              ? `${unreadCount} okunmamış bildirimin var`
+              : 'Tüm bildirimlerin okundu'}
+          </Text>
         </View>
 
-        <View style={styles.headerContent}>
-          <View style={styles.headerDescription}>
-            <Text style={styles.pageTitle}>Bildirim Merkezi</Text>
-            <Text style={styles.pageDescription}>
-              Servis kayıtlarınla ilgili güncellemeler burada.
-            </Text>
-          </View>
-
-          <View style={styles.unreadSummary}>
-            <Text style={styles.unreadNumber}>{unreadCount}</Text>
-            <Text style={styles.unreadLabel}>Okunmamış</Text>
-          </View>
-        </View>
-
-        <View style={styles.headerActions}>
-          <Text style={styles.sectionTitle}>Tüm Bildirimler</Text>
-
-          <Pressable
-            onPress={() => void handleMarkAllAsRead()}
-            disabled={unreadCount === 0 || isMarkingAll}
-            style={[
-              styles.markAllButton,
-              unreadCount === 0 && styles.disabledButton,
-            ]}
-          >
-            {isMarkingAll ? (
-              <ActivityIndicator
-                size="small"
-                color={colors.primary}
-              />
-            ) : (
-              <>
-                <Ionicons
-                  name="checkmark-done-outline"
-                  size={16}
-                  color={colors.primary}
-                />
-                <Text style={styles.markAllText}>Tümünü oku</Text>
-              </>
-            )}
-          </Pressable>
-        </View>
+        <Pressable
+          style={[
+            styles.markAllButton,
+            (unreadCount === 0 || isMarkingAll) &&
+              styles.disabledButton,
+          ]}
+          onPress={() => void handleMarkAllAsRead()}
+          disabled={unreadCount === 0 || isMarkingAll}
+        >
+          {isMarkingAll ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <Text style={styles.markAllText}>Tümünü oku</Text>
+          )}
+        </Pressable>
       </View>
 
       {errorMessage && (
         <View style={styles.errorContainer}>
-          <Ionicons
-            name="alert-circle-outline"
-            size={20}
-            color={colors.danger}
-          />
-          <View style={styles.errorContent}>
-            <Text style={styles.errorText}>{errorMessage}</Text>
-            <Pressable
-              onPress={() => void loadNotifications(true)}
-            >
-              <Text style={styles.retryText}>Tekrar dene</Text>
-            </Pressable>
-          </View>
+          <Text style={styles.errorText}>{errorMessage}</Text>
+          <Pressable onPress={() => void loadNotifications(true)}>
+            <Text style={styles.retryText}>Tekrar dene</Text>
+          </Pressable>
         </View>
       )}
 
       {isLoading ? (
         <View style={styles.centerContainer}>
-          <ActivityIndicator
-            size="large"
-            color={colors.primary}
-          />
-          <Text style={styles.loadingText}>
-            Bildirimler yükleniyor...
-          </Text>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Bildirimler yükleniyor...</Text>
         </View>
       ) : (
         <FlatList
@@ -367,10 +248,6 @@ export function NotificationsScreen() {
             styles.listContent,
             notifications.length === 0 && styles.emptyListContent,
           ]}
-          ItemSeparatorComponent={() => (
-            <View style={styles.listSeparator} />
-          )}
-          showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}
@@ -380,21 +257,14 @@ export function NotificationsScreen() {
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <View style={styles.emptyIcon}>
-                <Ionicons
-                  name="notifications-off-outline"
-                  size={38}
-                  color={colors.textMuted}
-                />
-              </View>
-
-              <Text style={styles.emptyTitle}>
-                Henüz bildirimin yok
-              </Text>
-
+              <Ionicons
+                name="notifications-off-outline"
+                size={42}
+                color={colors.textMuted}
+              />
+              <Text style={styles.emptyTitle}>Henüz bildirimin yok</Text>
               <Text style={styles.emptyDescription}>
-                Yeni servis güncellemeleri ve işlemlerle ilgili
-                bildirimlerin burada görünecek.
+                Yeni bildirimlerin burada görüntülenecek.
               </Text>
             </View>
           }
@@ -409,99 +279,34 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  headerContainer: {
-    backgroundColor: colors.surface,
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  navigationHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 44,
-  },
-  backButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  navigationTitle: {
-    ...typography.subheading,
-    color: colors.text,
-    fontWeight: '700',
-  },
-  headerRightPlaceholder: {
-    width: 42,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
     paddingTop: spacing.lg,
-    paddingBottom: spacing.lg,
+    paddingBottom: spacing.md,
   },
-  headerDescription: {
+  headerText: {
     flex: 1,
-    gap: spacing.xs,
   },
-  pageTitle: {
+  title: {
     ...typography.title,
     color: colors.text,
-    fontWeight: '700',
   },
-  pageDescription: {
+  subtitle: {
     ...typography.caption,
     color: colors.textMuted,
-    lineHeight: 20,
-  },
-  unreadSummary: {
-    minWidth: 76,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: 12,
-    backgroundColor: colors.primaryBackground,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  unreadNumber: {
-    ...typography.heading,
-    color: colors.primary,
-    fontWeight: '700',
-  },
-  unreadLabel: {
-    ...typography.small,
-    color: colors.primary,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: spacing.sm,
-  },
-  sectionTitle: {
-    ...typography.subheading,
-    color: colors.text,
-    fontWeight: '700',
+    marginTop: spacing.xs,
   },
   markAllButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: 8,
     backgroundColor: colors.primaryBackground,
   },
   disabledButton: {
-    opacity: 0.4,
+    opacity: 0.45,
   },
   markAllText: {
     ...typography.caption,
@@ -510,114 +315,63 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
     paddingBottom: spacing.xl,
+    gap: spacing.sm,
   },
   emptyListContent: {
     flexGrow: 1,
   },
-  listSeparator: {
-    height: spacing.sm,
-  },
   notificationCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: spacing.md,
     padding: spacing.md,
-    borderRadius: 12,
     backgroundColor: colors.surface,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
+    gap: spacing.md,
   },
-  unreadCard: {
+  unreadNotificationCard: {
     borderColor: colors.primary,
     backgroundColor: colors.primaryBackground,
   },
   notificationIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  unreadIcon: {
-    backgroundColor: colors.surface,
-  },
   notificationContent: {
     flex: 1,
-    gap: spacing.sm,
   },
-  notificationTitleRow: {
+  notificationHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: spacing.sm,
   },
-  notificationMessage: {
+  notificationTitle: {
     ...typography.body,
     color: colors.text,
-    fontWeight: '600',
     flex: 1,
-    lineHeight: 22,
   },
   unreadDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: colors.primary,
     marginTop: 6,
   },
-  notificationFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  dateContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    flex: 1,
-  },
   notificationDate: {
-    ...typography.small,
-    color: colors.textMuted,
-    flexShrink: 1,
-  },
-  detailLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  detailLinkText: {
     ...typography.caption,
-    color: colors.primary,
-    fontWeight: '600',
-  },
-  statusContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  statusIndicator: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-  },
-  unreadStatus: {
-    backgroundColor: colors.primary,
-  },
-  readStatus: {
-    backgroundColor: colors.textMuted,
-  },
-  statusText: {
-    ...typography.small,
     color: colors.textMuted,
+    marginTop: spacing.sm,
   },
-  unreadStatusText: {
+  detailHint: {
+    ...typography.small,
     color: colors.primary,
-    fontWeight: '600',
+    marginTop: spacing.sm,
   },
   centerContainer: {
     flex: 1,
@@ -633,47 +387,27 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: spacing.xl,
-  },
-  emptyIcon: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.lg,
+    padding: spacing.xl,
   },
   emptyTitle: {
     ...typography.subheading,
     color: colors.text,
-    fontWeight: '700',
-    textAlign: 'center',
+    marginTop: spacing.md,
   },
   emptyDescription: {
     ...typography.caption,
     color: colors.textMuted,
     textAlign: 'center',
-    lineHeight: 21,
-    marginTop: spacing.sm,
+    marginTop: spacing.xs,
   },
   errorContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
     marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
+    marginBottom: spacing.md,
     padding: spacing.md,
-    borderRadius: 10,
+    borderRadius: 8,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.danger,
-    backgroundColor: colors.surface,
-  },
-  errorContent: {
-    flex: 1,
-    gap: spacing.xs,
   },
   errorText: {
     ...typography.caption,
@@ -682,8 +416,7 @@ const styles = StyleSheet.create({
   retryText: {
     ...typography.caption,
     color: colors.primary,
-    fontWeight: '700',
+    fontWeight: '600',
+    marginTop: spacing.sm,
   },
 });
-
-export default NotificationsScreen;

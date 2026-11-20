@@ -208,6 +208,7 @@ export function CreateTicketScreen({ onSuccess }: Props) {
       });
 
       for (const photo of photos) {
+        
         await uploadTicketAttachment(createdTicket.id, {
           uri: photo.uri,
           mimeType: photo.mimeType,

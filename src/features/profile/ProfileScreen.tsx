@@ -12,6 +12,14 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+
+import type {
+  AppTabParamList,
+  AppStackParamList,
+} from '../../navigation/types';
 
 import { supabase } from '../../services/supabase/client';
 
@@ -65,6 +73,12 @@ export function ProfileScreen() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [email, setEmail] = useState('');
   const [fullName, setFullName] = useState('');
+const navigation =
+  useNavigation<BottomTabNavigationProp<AppTabParamList>>();
+
+const parentNavigation =
+  navigation.getParent<NativeStackNavigationProp<AppStackParamList>>();
+
 
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -348,6 +362,46 @@ export function ProfileScreen() {
         </View>
 
         <View style={styles.logoutSection}>
+
+{profile?.role === 'manager' ? (
+  <View style={styles.categoryManagementSection}>
+    <Text style={styles.logoutTitle}>Yönetim</Text>
+    <Text style={styles.logoutDescription}>
+      Servis kategorilerini buradan yönetebilirsiniz.
+    </Text>
+
+    <Pressable
+      style={({ pressed }) => [
+        styles.categoryManagementButton,
+        pressed && styles.buttonPressed,
+      ]}
+onPress={() => {
+  const parent = navigation.getParent();
+
+  console.log(
+    'PARENT NAVIGATOR ROUTES:',
+    parent?.getState().routeNames,
+  );
+
+  console.log(
+    'CURRENT NAVIGATOR ROUTES:',
+    navigation.getState().routeNames,
+  );
+
+  parent?.navigate('CategoryManagement');
+}}
+
+    >
+      <Text style={styles.categoryManagementIcon}>⚙</Text>
+      <Text style={styles.categoryManagementButtonText}>
+        Kategori Yönetimi
+      </Text>
+      <Text style={styles.categoryManagementArrow}>›</Text>
+    </Pressable>
+  </View>
+) : null}
+
+          
           <Text style={styles.logoutTitle}>Oturum İşlemleri</Text>
           <Text style={styles.logoutDescription}>
             Hesabınızdan güvenli bir şekilde çıkış yapabilirsiniz.
@@ -676,4 +730,37 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 25,
   },
+  categoryManagementSection: {
+  marginBottom: 25,
+},
+
+categoryManagementButton: {
+  minHeight: 55,
+  backgroundColor: palette.white,
+  borderWidth: 1,
+  borderColor: palette.border,
+  borderRadius: 13,
+  paddingHorizontal: 15,
+  flexDirection: 'row',
+  alignItems: 'center',
+  marginTop: 12,
+},
+
+categoryManagementIcon: {
+  color: palette.primary,
+  fontSize: 19,
+  marginRight: 12,
+},
+
+categoryManagementButtonText: {
+  flex: 1,
+  color: palette.text,
+  fontSize: 14,
+  fontWeight: '600',
+},
+
+categoryManagementArrow: {
+  color: palette.muted,
+  fontSize: 25,
+},
 });

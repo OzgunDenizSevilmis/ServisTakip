@@ -13,6 +13,7 @@ export type AppStackParamList = {
     ticketId: string;
   };
   Notifications: undefined;
+    CategoryManagement: undefined;
 };
 
 export type RootStackParamList = {
